@@ -1,0 +1,8 @@
+# Local data and secrets
+config.json
+.env
+data/
+*.log
+node_modules/
+.DS_Store
+Thumbs.db

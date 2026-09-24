@@ -1,0 +1,3 @@
+{
+  "note": "API keys are intentionally not stored in config.json. Set GEMINI_API_KEY in the server environment instead."
+}

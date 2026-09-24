@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Teacher Dashboard — NSTS.E</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">NSTS<span>.E</span></div>
+    <a class="link" href="/index.html">Home</a>
+  </div>
+
+  <div class="wrap">
+    <h1>Teacher dashboard</h1>
+    <p class="lede">Build a test below. Once created, you'll get a code to share with students on your school network.</p>
+
+    <div id="createErr" class="error-msg"></div>
+
+    <div class="panel" id="aiPanel" style="display:none;">
+      <h2>Generate questions with AI</h2>
+      <p class="hint" style="margin-bottom:16px;">Upload photos of the textbook page, notes, or slides you want to test on. AI will draft multiple-choice questions below for you to review and edit before creating the test.</p>
+
+      <div class="field">
+        <label for="aiImages">Photos of the material</label>
+        <input type="file" id="aiImages" accept="image/*" multiple>
+        <div class="hint" id="aiImageCount" style="margin-top:6px;">No images selected (up to 5)</div>
+      </div>
+
+      <div class="field inline">
+        <div>
+          <label for="aiNumQuestions">Number of questions</label>
+          <input type="number" id="aiNumQuestions" value="5" min="1" max="15">
+        </div>
+        <div>
+          <label for="aiContext">Focus area (optional)</label>
+          <input type="text" id="aiContext" placeholder="e.g. only section 2.3">
+        </div>
+      </div>
+
+      <button type="button" class="accent" id="aiGenerateBtn">Generate questions</button>
+      <div id="aiErr" class="error-msg" style="margin-top:14px;"></div>
+    </div>
+
+    <div class="panel" id="aiUnavailablePanel" style="display:none;">
+      <h2>Generate questions with AI</h2>
+      <p class="hint" style="margin-bottom:0;">Not set up yet on this server. Set a free Gemini API key in the server environment and restart the server to enable this — see the README for steps. You can still build tests manually below.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Create a new test</h2>
+
+      <div class="field">
+        <label for="testTitle">Test title</label>
+        <input type="text" id="testTitle" placeholder="e.g. Chapter 4 — Photosynthesis">
+      </div>
+
+      <div class="field inline">
+        <div>
+          <label for="timeLimit">Time limit (minutes)</label>
+          <input type="number" id="timeLimit" value="20" min="1" max="180">
+        </div>
+      </div>
+
+      <hr class="divider">
+
+      <div id="questionsContainer"></div>
+
+      <button type="button" class="ghost" id="addQuestionBtn">+ Add question</button>
+
+      <hr class="divider">
+
+      <button type="button" class="accent" id="createTestBtn">Create test</button>
+    </div>
+
+    <div class="panel">
+      <h2>Your tests</h2>
+      <div id="testList"><p class="empty-state">Loading…</p></div>
+    </div>
+
+    <div class="panel" id="resultsPanel" style="display:none;">
+      <h2 id="resultsTitle">Results</h2>
+      <div id="resultsBody"></div>
+      <button type="button" class="ghost" id="closeResultsBtn" style="margin-top:14px;">Close</button>
+    </div>
+  </div>
+
+  <script src="/js/teacher.js"></script>
+</body>
+</html>

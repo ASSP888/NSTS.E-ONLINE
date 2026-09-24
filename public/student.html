@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Take a Test — NSTS.E</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">NSTS<span>.E</span></div>
+    <a class="link" href="/index.html">Home</a>
+  </div>
+
+  <div class="wrap">
+
+    <!-- Step 1: enter code -->
+    <div id="joinScreen">
+      <h1>Enter your test code</h1>
+      <p class="lede">Ask your teacher for the 6-character code and type it below.</p>
+
+      <div id="joinErr" class="error-msg"></div>
+
+      <div class="panel">
+        <div class="field">
+          <label for="testCode">Test code</label>
+          <input type="text" id="testCode" placeholder="ABC123" maxlength="6" style="text-transform:uppercase; font-family: var(--mono); font-size:1.3rem; letter-spacing:3px;">
+        </div>
+        <div class="field">
+          <label for="studentName">Your name</label>
+          <input type="text" id="studentName" placeholder="Full name">
+        </div>
+        <button type="button" class="accent" id="joinBtn">Start test</button>
+      </div>
+    </div>
+
+    <!-- Step 2: take quiz -->
+    <div id="quizScreen" style="display:none;">
+      <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+        <h1 id="quizTitle" style="margin:0;"></h1>
+        <div class="timer" id="timerDisplay">--:--</div>
+      </div>
+      <p class="lede" id="quizProgress" style="margin-top:6px;"></p>
+
+      <div class="panel" id="questionsArea"></div>
+
+      <button type="button" class="accent" id="submitBtn">Submit test</button>
+    </div>
+
+    <!-- Step 3: score -->
+    <div id="scoreScreen" style="display:none;">
+      <div class="panel score-block">
+        <h2>Test submitted</h2>
+        <div class="big-score" id="scoreDisplay">-- <span>/ --</span></div>
+        <p class="lede" style="margin: 14px auto 0;">Your teacher can see this result on their dashboard.</p>
+        <a class="button" href="/index.html" style="margin-top:10px;">Done</a>
+      </div>
+    </div>
+
+  </div>
+
+  <script src="/js/student.js"></script>
+</body>
+</html>
