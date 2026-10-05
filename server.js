@@ -53,10 +53,7 @@ async function supabaseRequest(table, options = {}) {
   const response = await fetch(url, {
     method: options.method || 'GET',
     headers,
-    body:
-      options.body === undefined
-        ? undefined
-        : JSON.stringify(options.body),
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
 
   const text = await response.text();
@@ -93,6 +90,7 @@ function normalizeTest(row) {
     timeLimit: row.time_limit,
     questions: Array.isArray(row.questions) ? row.questions : [],
     createdAt: row.created_at,
+    teacherCode: row.teacher_code,
   };
 }
 
@@ -132,6 +130,14 @@ async function getAllTests() {
   return rows.map(normalizeTest);
 }
 
+async function getTestsForTeacher(teacherCode) {
+  const rows = await supabaseRequest('tests', {
+    query: `?select=*&teacher_code=eq.${encodeURIComponent(teacherCode)}&order=created_at.desc`,
+  });
+
+  return rows.map(normalizeTest);
+}
+
 async function getTestById(id) {
   const rows = await supabaseRequest('tests', {
     query: `?select=*&id=eq.${encodeURIComponent(id)}&limit=1`,
@@ -146,6 +152,18 @@ async function getTestByCode(code) {
   });
 
   return rows[0] ? normalizeTest(rows[0]) : null;
+}
+
+async function getTeacherFromRequest(req) {
+  const code = String(req.headers['x-teacher-code'] || '').trim().toUpperCase();
+
+  if (!code) return null;
+
+  const rows = await supabaseRequest('teachers', {
+    query: `?select=*&code=eq.${encodeURIComponent(code)}&limit=1`,
+  });
+
+  return rows[0] || null;
 }
 
 function sendJSON(res, statusCode, data) {
@@ -206,9 +224,7 @@ const MIME_TYPES = {
 function serveStatic(req, res, urlPath) {
   const rel = urlPath === '/' ? '/index.html' : urlPath;
 
-  const filePath = path.normalize(
-    path.join(PUBLIC_DIR, rel)
-  );
+  const filePath = path.normalize(path.join(PUBLIC_DIR, rel));
 
   if (!filePath.startsWith(PUBLIC_DIR)) {
     res.writeHead(403);
@@ -218,10 +234,7 @@ function serveStatic(req, res, urlPath) {
 
   fs.readFile(filePath, (err, content) => {
     if (err) {
-      res.writeHead(404, {
-        'Content-Type': 'text/plain; charset=utf-8',
-      });
-
+      res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
       res.end('Not found');
       return;
     }
@@ -229,8 +242,7 @@ function serveStatic(req, res, urlPath) {
     const ext = path.extname(filePath);
 
     res.writeHead(200, {
-      'Content-Type':
-        MIME_TYPES[ext] || 'application/octet-stream',
+      'Content-Type': MIME_TYPES[ext] || 'application/octet-stream',
     });
 
     res.end(content);
@@ -241,10 +253,7 @@ const server = http.createServer(async (req, res) => {
   let url;
 
   try {
-    url = new URL(
-      req.url,
-      `http://${req.headers.host}`
-    );
+    url = new URL(req.url, `http://${req.headers.host}`);
   } catch {
     res.writeHead(400);
     res.end('Bad request');
@@ -262,13 +271,38 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --------------------------------------------------
+    // TEACHER AUTHENTICATION
+    // --------------------------------------------------
+
+    const isTeacherRoute =
+      (pathname === '/api/tests' && (req.method === 'GET' || req.method === 'POST')) ||
+      (/^\/api\/tests\/[A-Za-z0-9-]+$/.test(pathname) && req.method === 'DELETE') ||
+      /^\/api\/results\//.test(pathname) ||
+      pathname === '/api/teacher/me' ||
+      pathname === '/api/generate-questions' ||
+      pathname === '/api/extract-questions';
+
+    let teacher = null;
+
+    if (isTeacherRoute) {
+      teacher = await getTeacherFromRequest(req);
+
+      if (!teacher) {
+        return sendJSON(res, 401, {
+          error: 'Invalid or missing teacher code.',
+        });
+      }
+    }
+
+    if (pathname === '/api/teacher/me' && req.method === 'GET') {
+      return sendJSON(res, 200, { name: teacher.name });
+    }
+
+    // --------------------------------------------------
     // CREATE TEST
     // --------------------------------------------------
 
-    if (
-      pathname === '/api/tests' &&
-      req.method === 'POST'
-    ) {
+    if (pathname === '/api/tests' && req.method === 'POST') {
       const body = await getRequestBody(req);
 
       if (
@@ -277,20 +311,14 @@ const server = http.createServer(async (req, res) => {
         body.questions.length === 0
       ) {
         return sendJSON(res, 400, {
-          error:
-            'A title and at least one question are required.',
+          error: 'A title and at least one question are required.',
         });
       }
 
       for (const q of body.questions) {
-        if (
-          !q.text ||
-          !Array.isArray(q.options) ||
-          q.options.length < 2
-        ) {
+        if (!q.text || !Array.isArray(q.options) || q.options.length < 2) {
           return sendJSON(res, 400, {
-            error:
-              'Every question needs text and at least 2 options.',
+            error: 'Every question needs text and at least 2 options.',
           });
         }
 
@@ -300,8 +328,7 @@ const server = http.createServer(async (req, res) => {
           q.correctIndex >= q.options.length
         ) {
           return sendJSON(res, 400, {
-            error:
-              'Every question needs a valid correct answer.',
+            error: 'Every question needs a valid correct answer.',
           });
         }
       }
@@ -311,23 +338,16 @@ const server = http.createServer(async (req, res) => {
       const newTest = {
         id: crypto.randomUUID(),
 
-        code: generateCode(
-          existingTests.map((t) => t.code)
-        ),
+        code: generateCode(existingTests.map((t) => t.code)),
 
         title: String(body.title).slice(0, 200),
 
-        timeLimit:
-          Number(body.timeLimit) > 0
-            ? Number(body.timeLimit)
-            : 20,
+        timeLimit: Number(body.timeLimit) > 0 ? Number(body.timeLimit) : 20,
 
         questions: body.questions.map((q) => ({
           id: crypto.randomUUID(),
           text: String(q.text).slice(0, 2000),
-          options: q.options.map((o) =>
-            String(o).slice(0, 500)
-          ),
+          options: q.options.map((o) => String(o).slice(0, 500)),
           correctIndex: q.correctIndex,
         })),
 
@@ -345,6 +365,7 @@ const server = http.createServer(async (req, res) => {
         body: {
           id: newTest.id,
           code: newTest.code,
+          teacher_code: teacher.code,
           title: newTest.title,
           time_limit: newTest.timeLimit,
           questions: newTest.questions,
@@ -352,40 +373,27 @@ const server = http.createServer(async (req, res) => {
         },
       });
 
-      return sendJSON(
-        res,
-        201,
-        normalizeTest(rows[0])
-      );
+      return sendJSON(res, 201, normalizeTest(rows[0]));
     }
 
     // --------------------------------------------------
-    // LIST TESTS
+    // LIST TESTS (only this teacher's)
     // --------------------------------------------------
 
-    if (
-      pathname === '/api/tests' &&
-      req.method === 'GET'
-    ) {
-      return sendJSON(
-        res,
-        200,
-        await getAllTests()
-      );
+    if (pathname === '/api/tests' && req.method === 'GET') {
+      return sendJSON(res, 200, await getTestsForTeacher(teacher.code));
     }
 
     // --------------------------------------------------
-    // DELETE TEST
+    // DELETE TEST (only own tests)
     // --------------------------------------------------
 
-    let m = pathname.match(
-      /^\/api\/tests\/([A-Za-z0-9-]+)$/
-    );
+    let m = pathname.match(/^\/api\/tests\/([A-Za-z0-9-]+)$/);
 
     if (m && req.method === 'DELETE') {
       const existing = await getTestById(m[1]);
 
-      if (!existing) {
+      if (!existing || existing.teacherCode !== teacher.code) {
         return sendJSON(res, 404, {
           error: 'Test not found.',
         });
@@ -393,8 +401,7 @@ const server = http.createServer(async (req, res) => {
 
       await supabaseRequest('tests', {
         method: 'DELETE',
-        query:
-          `?id=eq.${encodeURIComponent(m[1])}`,
+        query: `?id=eq.${encodeURIComponent(m[1])}`,
       });
 
       return sendJSON(res, 200, {
@@ -406,19 +413,14 @@ const server = http.createServer(async (req, res) => {
     // STUDENT GET TEST BY CODE
     // --------------------------------------------------
 
-    m = pathname.match(
-      /^\/api\/tests\/code\/([A-Za-z0-9]+)$/
-    );
+    m = pathname.match(/^\/api\/tests\/code\/([A-Za-z0-9]+)$/);
 
     if (m && req.method === 'GET') {
-      const test = await getTestByCode(
-        m[1].toUpperCase()
-      );
+      const test = await getTestByCode(m[1].toUpperCase());
 
       if (!test) {
         return sendJSON(res, 404, {
-          error:
-            'No test found with that code.',
+          error: 'No test found with that code.',
         });
       }
 
@@ -439,37 +441,21 @@ const server = http.createServer(async (req, res) => {
         })),
       };
 
-      return sendJSON(
-        res,
-        200,
-        safeTest
-      );
+      return sendJSON(res, 200, safeTest);
     }
 
     // --------------------------------------------------
     // SUBMIT ANSWERS
     // --------------------------------------------------
 
-    if (
-      pathname === '/api/submit' &&
-      req.method === 'POST'
-    ) {
+    if (pathname === '/api/submit' && req.method === 'POST') {
       const body = await getRequestBody(req);
 
-      const {
-        testId,
-        studentName,
-        answers,
-      } = body;
+      const { testId, studentName, answers } = body;
 
-      if (
-        !testId ||
-        !studentName ||
-        typeof answers !== 'object'
-      ) {
+      if (!testId || !studentName || typeof answers !== 'object') {
         return sendJSON(res, 400, {
-          error:
-            'Missing test, name, or answers.',
+          error: 'Missing test, name, or answers.',
         });
       }
 
@@ -486,8 +472,7 @@ const server = http.createServer(async (req, res) => {
       const detail = test.questions.map((q) => {
         const given = answers[q.id];
 
-        const correct =
-          given === q.correctIndex;
+        const correct = given === q.correctIndex;
 
         if (correct) {
           score++;
@@ -504,22 +489,13 @@ const server = http.createServer(async (req, res) => {
 
       const result = {
         id: crypto.randomUUID(),
-
         testId,
-
         testTitle: test.title,
-
-        studentName:
-          String(studentName).slice(0, 200),
-
+        studentName: String(studentName).slice(0, 200),
         score,
-
         total: test.questions.length,
-
         detail,
-
-        submittedAt:
-          new Date().toISOString(),
+        submittedAt: new Date().toISOString(),
       };
 
       await supabaseRequest('results', {
@@ -548,39 +524,30 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --------------------------------------------------
-    // RESULTS FOR ONE TEST
+    // RESULTS FOR ONE TEST (only own tests)
     // --------------------------------------------------
 
-    m = pathname.match(
-      /^\/api\/results\/([A-Za-z0-9-]+)$/
-    );
+    m = pathname.match(/^\/api\/results\/([A-Za-z0-9-]+)$/);
 
     if (m && req.method === 'GET') {
-      const rows = await supabaseRequest(
-        'results',
-        {
-          query:
-            `?select=*&test_id=eq.${encodeURIComponent(
-              m[1]
-            )}&order=submitted_at.desc`,
-        }
-      );
+      const ownedTest = await getTestById(m[1]);
 
-      return sendJSON(
-        res,
-        200,
-        rows.map(normalizeResult)
-      );
+      if (!ownedTest || ownedTest.teacherCode !== teacher.code) {
+        return sendJSON(res, 404, { error: 'Test not found.' });
+      }
+
+      const rows = await supabaseRequest('results', {
+        query: `?select=*&test_id=eq.${encodeURIComponent(m[1])}&order=submitted_at.desc`,
+      });
+
+      return sendJSON(res, 200, rows.map(normalizeResult));
     }
 
     // --------------------------------------------------
     // AI STATUS
     // --------------------------------------------------
 
-    if (
-      pathname === '/api/ai-status' &&
-      req.method === 'GET'
-    ) {
+    if (pathname === '/api/ai-status' && req.method === 'GET') {
       return sendJSON(res, 200, {
         available: Boolean(getApiKey()),
         provider: 'Google Gemini',
@@ -591,10 +558,7 @@ const server = http.createServer(async (req, res) => {
     // GENERATE QUESTIONS WITH GEMINI
     // --------------------------------------------------
 
-    if (
-      pathname === '/api/generate-questions' &&
-      req.method === 'POST'
-    ) {
+    if (pathname === '/api/generate-questions' && req.method === 'POST') {
       const apiKey = getApiKey();
 
       if (!apiKey) {
@@ -606,64 +570,44 @@ const server = http.createServer(async (req, res) => {
 
       const body = await getRequestBody(req);
 
-      const images = Array.isArray(body.images)
-        ? body.images
-        : [];
+      const images = Array.isArray(body.images) ? body.images : [];
 
       const numQuestions = Math.min(
-        Math.max(
-          parseInt(body.numQuestions, 10) || 5,
-          1
-        ),
+        Math.max(parseInt(body.numQuestions, 10) || 5, 1),
         15
       );
 
-      const context = body.context
-        ? String(body.context).slice(0, 500)
-        : '';
+      const context = body.context ? String(body.context).slice(0, 500) : '';
 
       if (images.length === 0) {
         return sendJSON(res, 400, {
-          error:
-            'Upload at least one image of the material.',
+          error: 'Upload at least one image of the material.',
         });
       }
 
       if (images.length > 5) {
         return sendJSON(res, 400, {
-          error:
-            'Please upload 5 images or fewer at a time.',
+          error: 'Please upload 5 images or fewer at a time.',
         });
       }
 
-      const allowedImageTypes =
-        new Set([
-          'image/jpeg',
-          'image/png',
-          'image/gif',
-          'image/webp',
-        ]);
+      const allowedImageTypes = new Set([
+        'image/jpeg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+      ]);
 
       for (const img of images) {
-        if (
-          !img ||
-          typeof img.data !== 'string' ||
-          !img.data
-        ) {
+        if (!img || typeof img.data !== 'string' || !img.data) {
           return sendJSON(res, 400, {
-            error:
-              'One of the uploaded images is invalid.',
+            error: 'One of the uploaded images is invalid.',
           });
         }
 
-        if (
-          !allowedImageTypes.has(
-            img.mediaType
-          )
-        ) {
+        if (!allowedImageTypes.has(img.mediaType)) {
           return sendJSON(res, 400, {
-            error:
-              'Unsupported image type. Use JPEG, PNG, GIF, or WebP.',
+            error: 'Unsupported image type. Use JPEG, PNG, GIF, or WebP.',
           });
         }
       }
@@ -680,11 +624,7 @@ const server = http.createServer(async (req, res) => {
           text:
             `Generate exactly ${numQuestions} multiple-choice questions based strictly on the ` +
             `material shown in the attached image(s). ` +
-            `${
-              context
-                ? 'Focus area: ' + context + '. '
-                : ''
-            }` +
+            `${context ? 'Focus area: ' + context + '. ' : ''}` +
             `Each question must have exactly 4 answer options with only one correct answer. ` +
             `Vary difficulty and cover different parts of the material. ` +
             `Respond with ONLY a raw JSON array (no markdown fences, no commentary) in this exact shape: ` +
@@ -704,11 +644,8 @@ const server = http.createServer(async (req, res) => {
             method: 'POST',
 
             headers: {
-              'Content-Type':
-                'application/json',
-
-              'x-goog-api-key':
-                apiKey,
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
             },
 
             body: JSON.stringify({
@@ -720,9 +657,7 @@ const server = http.createServer(async (req, res) => {
               ],
 
               generationConfig: {
-                responseMimeType:
-                  'application/json',
-
+                responseMimeType: 'application/json',
                 temperature: 0.4,
               },
             }),
@@ -736,21 +671,16 @@ const server = http.createServer(async (req, res) => {
       }
 
       if (!aiRes.ok) {
-        const errBody =
-          await aiRes.text();
+        const errBody = await aiRes.text();
 
-        let message =
-          `Gemini returned an error (status ${aiRes.status}).`;
+        let message = `Gemini returned an error (status ${aiRes.status}).`;
 
         if (aiRes.status === 400) {
           message =
             'Gemini rejected the request. Check the uploaded images and API key/model settings.';
         }
 
-        if (
-          aiRes.status === 401 ||
-          aiRes.status === 403
-        ) {
+        if (aiRes.status === 401 || aiRes.status === 403) {
           message =
             'The Gemini API key was rejected. Create/check your key in Google AI Studio.';
         }
@@ -760,30 +690,23 @@ const server = http.createServer(async (req, res) => {
             'The free Gemini limit has been reached temporarily. Try again later.';
         }
 
-        console.error(
-          'Gemini API error:',
-          aiRes.status,
-          errBody
-        );
+        console.error('Gemini API error:', aiRes.status, errBody);
 
         return sendJSON(res, 502, {
           error: message,
         });
       }
 
-      const aiData =
-        await aiRes.json();
+      const aiData = await aiRes.json();
 
-      const raw =
-        aiData?.candidates?.[0]?.content?.parts
-          ?.map((p) => p.text || '')
-          .join('')
-          .trim();
+      const raw = aiData?.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text || '')
+        .join('')
+        .trim();
 
       if (!raw) {
         return sendJSON(res, 502, {
-          error:
-            'Gemini response did not contain any text.',
+          error: 'Gemini response did not contain any text.',
         });
       }
 
@@ -792,24 +715,19 @@ const server = http.createServer(async (req, res) => {
       try {
         parsed = JSON.parse(
           raw
-            .replace(
-              /^```(?:json)?/i,
-              ''
-            )
+            .replace(/^```(?:json)?/i, '')
             .replace(/```$/, '')
             .trim()
         );
       } catch {
         return sendJSON(res, 502, {
-          error:
-            'Gemini response was not valid JSON. Try again.',
+          error: 'Gemini response was not valid JSON. Try again.',
         });
       }
 
       if (!Array.isArray(parsed)) {
         return sendJSON(res, 502, {
-          error:
-            'Gemini response was not in the expected format.',
+          error: 'Gemini response was not in the expected format.',
         });
       }
 
@@ -823,22 +741,13 @@ const server = http.createServer(async (req, res) => {
             q.options.length <= 6 &&
             typeof q.correctIndex === 'number' &&
             q.correctIndex >= 0 &&
-            q.correctIndex <
-              q.options.length
+            q.correctIndex < q.options.length
         )
         .slice(0, numQuestions)
         .map((q) => ({
-          text: String(q.text).slice(
-            0,
-            2000
-          ),
-
-          options: q.options.map((o) =>
-            String(o).slice(0, 500)
-          ),
-
-          correctIndex:
-            q.correctIndex,
+          text: String(q.text).slice(0, 2000),
+          options: q.options.map((o) => String(o).slice(0, 500)),
+          correctIndex: q.correctIndex,
         }));
 
       if (questions.length === 0) {
@@ -854,46 +763,182 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --------------------------------------------------
+    // IMPORT QUESTIONS FROM AN EXISTING TEST FILE
+    // --------------------------------------------------
+
+    if (pathname === '/api/extract-questions' && req.method === 'POST') {
+      const apiKey = getApiKey();
+
+      if (!apiKey) {
+        return sendJSON(res, 400, {
+          error:
+            'No Gemini API key configured. Set GEMINI_API_KEY and restart the server.',
+        });
+      }
+
+      const body = await getRequestBody(req);
+
+      let filePart;
+
+      if (typeof body.text === 'string' && body.text.trim()) {
+        filePart = {
+          text:
+            'TEST FILE CONTENT (' + String(body.fileName || 'file').slice(0, 100) + '):\n\n' +
+            body.text.slice(0, 300000),
+        };
+      } else if (typeof body.data === 'string' && body.data) {
+        const okTypes = new Set([
+          'application/pdf',
+          'image/jpeg',
+          'image/png',
+          'image/gif',
+          'image/webp',
+        ]);
+
+        if (!okTypes.has(body.mediaType)) {
+          return sendJSON(res, 400, {
+            error: 'Unsupported file type. Use HTML, TXT, JSON, CSV, PDF or an image.',
+          });
+        }
+
+        filePart = {
+          inline_data: { mime_type: body.mediaType, data: body.data },
+        };
+      } else {
+        return sendJSON(res, 400, {
+          error: 'Upload a test file first.',
+        });
+      }
+
+      const prompt =
+        'The attached file is an existing multiple-choice test written by a teacher. ' +
+        'Extract EVERY multiple-choice question from it exactly as written. ' +
+        'Do not invent, reword, merge, reorder or skip any question or option. ' +
+        'If the file contains the correct answers (for example an answer key, marked answers, or an index in code such as "a:1" meaning the second option), ' +
+        'use them. Indexes in code are zero-based. If no answers are given, choose the most likely correct option. ' +
+        'Respond with ONLY a raw JSON array (no markdown fences, no commentary) in this exact shape: ' +
+        '[{"text":"question text","options":["a","b","c","d"],"correctIndex":0}]';
+
+      let aiRes;
+
+      try {
+        aiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(AI_MODEL)}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
+            body: JSON.stringify({
+              contents: [{ role: 'user', parts: [filePart, { text: prompt }] }],
+              generationConfig: {
+                responseMimeType: 'application/json',
+                temperature: 0,
+                maxOutputTokens: 30000,
+              },
+            }),
+          }
+        );
+      } catch {
+        return sendJSON(res, 502, {
+          error: 'Could not reach Google Gemini. Check the internet connection on this computer.',
+        });
+      }
+
+      if (!aiRes.ok) {
+        const errBody = await aiRes.text();
+        console.error('Gemini API error:', aiRes.status, errBody);
+
+        let message = `Gemini returned an error (status ${aiRes.status}).`;
+        if (aiRes.status === 400) message = 'Gemini rejected the file. Try a different file or format.';
+        if (aiRes.status === 401 || aiRes.status === 403) message = 'The Gemini API key was rejected.';
+        if (aiRes.status === 429) message = 'The free Gemini limit has been reached temporarily. Try again later.';
+
+        return sendJSON(res, 502, { error: message });
+      }
+
+      const aiData = await aiRes.json();
+
+      const raw = aiData?.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text || '')
+        .join('')
+        .trim();
+
+      if (!raw) {
+        return sendJSON(res, 502, { error: 'Gemini response did not contain any text.' });
+      }
+
+      let parsed;
+
+      try {
+        parsed = JSON.parse(
+          raw.replace(/^```(?:json)?/i, '').replace(/```$/, '').trim()
+        );
+      } catch {
+        return sendJSON(res, 502, { error: 'Gemini response was not valid JSON. Try again.' });
+      }
+
+      if (!Array.isArray(parsed)) {
+        return sendJSON(res, 502, { error: 'Gemini response was not in the expected format.' });
+      }
+
+      const extracted = parsed
+        .filter(
+          (q) =>
+            q &&
+            typeof q.text === 'string' &&
+            Array.isArray(q.options) &&
+            q.options.length >= 2 &&
+            q.options.length <= 6 &&
+            typeof q.correctIndex === 'number' &&
+            q.correctIndex >= 0 &&
+            q.correctIndex < q.options.length
+        )
+        .slice(0, 200)
+        .map((q) => ({
+          text: String(q.text).slice(0, 2000),
+          options: q.options.map((o) => String(o).slice(0, 500)),
+          correctIndex: q.correctIndex,
+        }));
+
+      if (extracted.length === 0) {
+        return sendJSON(res, 502, {
+          error: 'No multiple-choice questions could be found in that file.',
+        });
+      }
+
+      return sendJSON(res, 200, { questions: extracted });
+    }
+
+    // --------------------------------------------------
     // STATIC FRONTEND
     // --------------------------------------------------
 
     if (req.method === 'GET') {
-      return serveStatic(
-        req,
-        res,
-        pathname
-      );
+      return serveStatic(req, res, pathname);
     }
 
     return sendJSON(res, 404, {
       error: 'Not found.',
     });
-
   } catch (err) {
     console.error(err);
 
-    if (
-      err.code === 'PAYLOAD_TOO_LARGE'
-    ) {
+    if (err.code === 'PAYLOAD_TOO_LARGE') {
       return sendJSON(res, 413, {
         error:
           'Request is too large. Reduce the number or size of images and try again.',
       });
     }
 
-    if (
-      err.code === 'INVALID_JSON'
-    ) {
+    if (err.code === 'INVALID_JSON') {
       return sendJSON(res, 400, {
-        error:
-          'Invalid JSON request.',
+        error: 'Invalid JSON request.',
       });
     }
 
-    if (
-      err.code ===
-      'SUPABASE_NOT_CONFIGURED'
-    ) {
+    if (err.code === 'SUPABASE_NOT_CONFIGURED') {
       return sendJSON(res, 500, {
         error:
           'Supabase is not configured. Set SUPABASE_URL and SUPABASE_PUBLISHABLE_KEY.',
@@ -901,24 +946,19 @@ const server = http.createServer(async (req, res) => {
     }
 
     return sendJSON(res, 500, {
-      error:
-        'Server error. Check the Node.js console for details.',
+      error: 'Server error. Check the Node.js console for details.',
     });
   }
 });
 
 function getLocalIPs() {
-  const nets =
-    os.networkInterfaces();
+  const nets = os.networkInterfaces();
 
   const ips = [];
 
   for (const name of Object.keys(nets)) {
     for (const net of nets[name]) {
-      if (
-        net.family === 'IPv4' &&
-        !net.internal
-      ) {
+      if (net.family === 'IPv4' && !net.internal) {
         ips.push(net.address);
       }
     }
@@ -927,59 +967,32 @@ function getLocalIPs() {
   return ips;
 }
 
-server.listen(
-  PORT,
-  '0.0.0.0',
-  () => {
-    console.log(
-      '='.repeat(50)
-    );
+server.listen(PORT, '0.0.0.0', () => {
+  console.log('='.repeat(50));
 
-    console.log(
-      'NSTS.E Online Backend is running'
-    );
+  console.log('NSTS.E Online Backend is running');
 
-    console.log(
-      '='.repeat(50)
-    );
+  console.log('='.repeat(50));
 
-    console.log(
-      `On this computer:      http://localhost:${PORT}`
-    );
+  console.log(`On this computer:      http://localhost:${PORT}`);
 
-    const ips =
-      getLocalIPs();
+  const ips = getLocalIPs();
 
-    if (ips.length) {
-      console.log(
-        'From other devices on the same WiFi/network:'
-      );
+  if (ips.length) {
+    console.log('From other devices on the same WiFi/network:');
 
-      ips.forEach((ip) =>
-        console.log(
-          `  http://${ip}:${PORT}`
-        )
-      );
-    }
-
-    console.log(
-      '='.repeat(50)
-    );
-
-    console.log(
-      supabaseReady()
-        ? 'Supabase: CONFIGURED'
-        : 'Supabase: NOT CONFIGURED'
-    );
-
-    console.log(
-      getApiKey()
-        ? 'AI question generation: ENABLED'
-        : 'AI question generation: not configured'
-    );
-
-    console.log(
-      '='.repeat(50)
-    );
+    ips.forEach((ip) => console.log(`  http://${ip}:${PORT}`));
   }
-);
+
+  console.log('='.repeat(50));
+
+  console.log(supabaseReady() ? 'Supabase: CONFIGURED' : 'Supabase: NOT CONFIGURED');
+
+  console.log(
+    getApiKey()
+      ? 'AI question generation: ENABLED'
+      : 'AI question generation: not configured'
+  );
+
+  console.log('='.repeat(50));
+});
