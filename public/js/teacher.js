@@ -1,3 +1,11 @@
+// ---- teacher code / API helper ----
+let teacherCode = sessionStorage.getItem('teacherCode') || '';
+
+function api(url, options = {}) {
+  options.headers = { ...(options.headers || {}), 'x-teacher-code': teacherCode };
+  return fetch(url, options);
+}
+
 // ---- state ----
 let qCounter = 0;
 let questions = []; // { id, text, options: [string], correctIndex }
@@ -160,12 +168,13 @@ async function createTest() {
   btn.textContent = 'Creating…';
 
   try {
-    const res = await fetch('/api/tests', {
+    const res = await api('/api/tests', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
+    if (res.status === 401) return logout();
     if (!res.ok) throw new Error(data.error || 'Could not create test.');
 
     // reset form
@@ -188,7 +197,8 @@ async function createTest() {
 async function loadTests() {
   const listEl = document.getElementById('testList');
   try {
-    const res = await fetch('/api/tests');
+    const res = await api('/api/tests');
+    if (res.status === 401) return logout();
     const tests = await res.json();
     if (!tests.length) {
       listEl.innerHTML = '<p class="empty-state">No tests yet — create one above.</p>';
@@ -223,7 +233,7 @@ async function loadTests() {
 
 async function deleteTest(id, title) {
   if (!confirm(`Delete "${title}"? This cannot be undone.`)) return;
-  await fetch('/api/tests/' + id, { method: 'DELETE' });
+  await api('/api/tests/' + id, { method: 'DELETE' });
   await loadTests();
 }
 
@@ -239,11 +249,12 @@ async function viewResults(testId, title) {
   body.innerHTML = '<p class="empty-state">Loading…</p>';
   panel.scrollIntoView({ behavior: 'smooth' });
 
-  const res = await fetch('/api/results/' + testId);
+  const res = await api('/api/results/' + testId);
+  if (res.status === 401) return logout();
   const results = await res.json();
   currentResultsData = results;
 
-  if (!results.length) {
+  if (!Array.isArray(results) || !results.length) {
     body.innerHTML = '<p class="empty-state">No submissions yet.</p>';
     return;
   }
@@ -317,6 +328,7 @@ async function checkAiStatus() {
     const data = await res.json();
     document.getElementById('aiPanel').style.display = data.available ? 'block' : 'none';
     document.getElementById('aiUnavailablePanel').style.display = data.available ? 'none' : 'block';
+    document.getElementById('importPanel').style.display = data.available ? 'block' : 'none';
   } catch {
     // If the check itself fails, just hide both — manual test creation still works.
   }
@@ -389,12 +401,13 @@ document.getElementById('aiGenerateBtn').addEventListener('click', async () => {
 
     btn.textContent = 'Generating questions…';
 
-    const res = await fetch('/api/generate-questions', {
+    const res = await api('/api/generate-questions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ images, numQuestions, context }),
     });
     const data = await res.json();
+    if (res.status === 401) return logout();
     if (!res.ok) throw new Error(data.error || 'Generation failed.');
 
     // Drop the single default blank question if the user hasn't touched it yet
@@ -429,6 +442,119 @@ document.getElementById('aiGenerateBtn').addEventListener('click', async () => {
   }
 });
 
+
+// ---- import an existing test file ----
+
+let importFile = null;
+
+function showImportError(msg) {
+  const el = document.getElementById('importErr');
+  el.textContent = msg;
+  el.classList.add('show');
+}
+function clearImportError() {
+  document.getElementById('importErr').classList.remove('show');
+}
+
+function readAsText(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error('Could not read file.'));
+    r.readAsText(file);
+  });
+}
+
+function readAsBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1]);
+    r.onerror = () => reject(new Error('Could not read file.'));
+    r.readAsDataURL(file);
+  });
+}
+
+document.getElementById('importFile').addEventListener('change', (e) => {
+  importFile = e.target.files[0] || null;
+  document.getElementById('importFileName').textContent = importFile
+    ? importFile.name
+    : 'No file selected';
+});
+
+document.getElementById('importBtn').addEventListener('click', async () => {
+  clearImportError();
+  if (!importFile) return showImportError('Choose a test file first.');
+
+  const btn = document.getElementById('importBtn');
+  btn.disabled = true;
+  btn.textContent = 'Reading test…';
+
+  try {
+    const name = importFile.name;
+    const lower = name.toLowerCase();
+    let payload;
+    let guessedTitle = '';
+
+    if (lower.endsWith('.pdf')) {
+      payload = { mediaType: 'application/pdf', data: await readAsBase64(importFile) };
+    } else if (importFile.type.startsWith('image/')) {
+      const img = await fileToCompressedBase64(importFile);
+      payload = { mediaType: img.mediaType, data: img.data };
+    } else {
+      const text = await readAsText(importFile);
+      payload = { fileName: name, text };
+      const t = text.match(/<title>([^<]+)<\/title>/i);
+      if (t) guessedTitle = t[1].trim();
+    }
+
+    const res = await api('/api/extract-questions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (res.status === 401) return logout();
+    if (!res.ok) throw new Error(data.error || 'Import failed.');
+
+    // replace the untouched blank question, if any
+    if (
+      questions.length === 1 &&
+      !questions[0].text.trim() &&
+      questions[0].options.every((o) => !o.trim())
+    ) {
+      questions = [];
+    }
+
+    data.questions.forEach((q) => {
+      qCounter++;
+      questions.push({
+        id: 'q' + qCounter,
+        text: q.text,
+        options: q.options,
+        correctIndex: q.correctIndex,
+      });
+    });
+    renderQuestions();
+
+    const titleInput = document.getElementById('testTitle');
+    if (!titleInput.value.trim()) {
+      titleInput.value = guessedTitle || name.replace(/\.[^.]+$/, '');
+    }
+
+    document.getElementById('importFile').value = '';
+    importFile = null;
+    document.getElementById('importFileName').textContent =
+      data.questions.length + ' questions imported — review them below.';
+
+    document.getElementById('testTitle').scrollIntoView({ behavior: 'smooth' });
+  } catch (err) {
+    showImportError(err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Import questions';
+  }
+});
+
 // ---- wire up ----
 document.getElementById('addQuestionBtn').addEventListener('click', addQuestion);
 document.getElementById('createTestBtn').addEventListener('click', createTest);
@@ -436,7 +562,61 @@ document.getElementById('closeResultsBtn').addEventListener('click', () => {
   document.getElementById('resultsPanel').style.display = 'none';
 });
 
-// start with one blank question
-addQuestion();
-loadTests();
-checkAiStatus();
+// ---- teacher sign-in ----
+
+function showDashboard() {
+  document.getElementById('loginPanel').style.display = 'none';
+  document.getElementById('dashboard').style.display = 'block';
+  if (questions.length === 0) addQuestion();
+  loadTests();
+  checkAiStatus();
+}
+
+function logout() {
+  teacherCode = '';
+  sessionStorage.removeItem('teacherCode');
+  document.getElementById('dashboard').style.display = 'none';
+  document.getElementById('loginPanel').style.display = 'block';
+}
+
+async function login(code) {
+  const err = document.getElementById('loginErr');
+  err.classList.remove('show');
+  code = code.trim().toUpperCase();
+
+  if (!code) {
+    err.textContent = 'Please enter your teacher code.';
+    err.classList.add('show');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/teacher/me', { headers: { 'x-teacher-code': code } });
+
+    if (!res.ok) {
+      err.textContent = 'That code was not recognised.';
+      err.classList.add('show');
+      sessionStorage.removeItem('teacherCode');
+      return;
+    }
+  } catch {
+    err.textContent = 'Could not reach the server.';
+    err.classList.add('show');
+    return;
+  }
+
+  teacherCode = code;
+  sessionStorage.setItem('teacherCode', code);
+  showDashboard();
+}
+
+document.getElementById('loginBtn').addEventListener('click', () =>
+  login(document.getElementById('teacherCodeInput').value)
+);
+document.getElementById('teacherCodeInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') login(e.target.value);
+});
+document.getElementById('logoutBtn').addEventListener('click', logout);
+
+// auto sign-in if a code was saved earlier in this browser tab
+if (teacherCode) login(teacherCode);
