@@ -17,12 +17,13 @@
 
     <div class="panel" id="loginPanel">
       <h2>Teacher sign-in</h2>
-      <p class="hint">Enter the access code your school gave you.</p>
+      <p class="hint">Choose your own personal code the first time (at least 6 letters or numbers) and keep it private. Next time, enter the same code to open your dashboard. Anyone with your code can open your dashboard, so don't make it easy to guess.</p>
       <div class="field">
-        <label for="teacherCodeInput">Teacher code</label>
-        <input type="text" id="teacherCodeInput" placeholder="e.g. TCH-4F7B2A" autocomplete="off">
+        <label for="teacherCodeInput">Your teacher code</label>
+        <input type="text" id="teacherCodeInput" placeholder="e.g. MYCODE2026" autocomplete="off">
       </div>
-      <button type="button" class="accent" id="loginBtn">Continue</button>
+      <button type="button" class="accent" id="loginBtn">Sign in</button>
+      <button type="button" class="ghost" id="registerBtn">Create my code</button>
       <div id="loginErr" class="error-msg" style="margin-top:14px;"></div>
     </div>
 
