@@ -271,6 +271,48 @@ const server = http.createServer(async (req, res) => {
     }
 
     // --------------------------------------------------
+    // TEACHER SELF-REGISTRATION (teacher chooses own code)
+    // --------------------------------------------------
+
+    if (pathname === '/api/teacher/register' && req.method === 'POST') {
+      const body = await getRequestBody(req);
+      const code = String(body.code || '').trim().toUpperCase();
+
+      if (!/^[A-Z0-9_-]{6,30}$/.test(code)) {
+        return sendJSON(res, 400, {
+          error: 'Your code must be 6 to 30 characters: letters, numbers, - or _ only.',
+        });
+      }
+
+      const taken = await supabaseRequest('teachers', {
+        query: `?select=code&code=eq.${encodeURIComponent(code)}&limit=1`,
+      });
+
+      if (taken && taken.length) {
+        return sendJSON(res, 409, {
+          error: 'That code is already taken. Please choose a different one.',
+        });
+      }
+
+      try {
+        await supabaseRequest('teachers', {
+          method: 'POST',
+          headers: { Prefer: 'return=minimal' },
+          body: { code },
+        });
+      } catch (err) {
+        if (err.status === 409) {
+          return sendJSON(res, 409, {
+            error: 'That code is already taken. Please choose a different one.',
+          });
+        }
+        throw err;
+      }
+
+      return sendJSON(res, 201, { success: true });
+    }
+
+    // --------------------------------------------------
     // TEACHER AUTHENTICATION
     // --------------------------------------------------
 
