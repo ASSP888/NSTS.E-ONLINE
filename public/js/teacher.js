@@ -610,6 +610,37 @@ async function login(code) {
   showDashboard();
 }
 
+async function registerCode(code) {
+  const err = document.getElementById('loginErr');
+  err.classList.remove('show');
+  code = code.trim().toUpperCase();
+
+  try {
+    const res = await fetch('/api/teacher/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      err.textContent = data.error || 'Could not create your code.';
+      err.classList.add('show');
+      return;
+    }
+  } catch {
+    err.textContent = 'Could not reach the server.';
+    err.classList.add('show');
+    return;
+  }
+
+  await login(code);
+}
+
+document.getElementById('registerBtn').addEventListener('click', () =>
+  registerCode(document.getElementById('teacherCodeInput').value)
+);
+
 document.getElementById('loginBtn').addEventListener('click', () =>
   login(document.getElementById('teacherCodeInput').value)
 );
