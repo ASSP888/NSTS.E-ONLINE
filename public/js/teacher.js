@@ -1,5 +1,5 @@
 // ---- teacher code / API helper ----
-let teacherCode = sessionStorage.getItem('teacherCode') || '';
+let teacherCode = localStorage.getItem('teacherCode') || '';
 
 function api(url, options = {}) {
   options.headers = { ...(options.headers || {}), 'x-teacher-code': teacherCode };
@@ -574,7 +574,7 @@ function showDashboard() {
 
 function logout() {
   teacherCode = '';
-  sessionStorage.removeItem('teacherCode');
+  localStorage.removeItem('teacherCode');
   document.getElementById('dashboard').style.display = 'none';
   document.getElementById('loginPanel').style.display = 'block';
 }
@@ -596,7 +596,7 @@ async function login(code) {
     if (!res.ok) {
       err.textContent = 'That code was not recognised.';
       err.classList.add('show');
-      sessionStorage.removeItem('teacherCode');
+      localStorage.removeItem('teacherCode');
       return;
     }
   } catch {
@@ -606,7 +606,7 @@ async function login(code) {
   }
 
   teacherCode = code;
-  sessionStorage.setItem('teacherCode', code);
+  localStorage.setItem('teacherCode', code);
   showDashboard();
 }
 
