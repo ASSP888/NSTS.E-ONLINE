@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Take a Test — NSTS.E</title>
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <div class="topbar sticky">
+    <div class="brand-wrap">
+      <div class="brand">NSTS<span>.E</span></div>
+      <div class="credit">Web developed by Farman Ali</div>
+    </div>
+    <div class="header-timer" id="headerTimer" aria-live="off">--:--</div>
+    <a class="link" id="homeLink" href="/index.html">Home</a>
+  </div>
+
+  <div class="wrap">
+
+    <!-- Step 1: student details + test code -->
+    <div id="joinScreen">
+      <h1>Student details</h1>
+      <p class="lede">Fill in your details and the 6-character test code from your teacher.</p>
+
+      <div id="joinErr" class="error-msg"></div>
+
+      <div class="panel">
+        <div class="field">
+          <label for="studentName">Name</label>
+          <input type="text" id="studentName" placeholder="Your full name" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="fatherName">Father's name</label>
+          <input type="text" id="fatherName" placeholder="Father's full name" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="testCode">Test code</label>
+          <input type="text" id="testCode" placeholder="ABC123" maxlength="6" autocomplete="off" style="text-transform:uppercase; font-family: var(--mono); font-size:1.3rem; letter-spacing:3px;">
+        </div>
+        <p class="hint" style="margin-top:0;">During the test: copying, pasting, right-click and printing are disabled, and leaving this tab or window is recorded. After 3 warnings the test is submitted automatically.</p>
+        <button type="button" class="accent" id="joinBtn">Start test</button>
+      </div>
+    </div>
+
+    <!-- Step 2: take quiz -->
+    <div id="quizScreen" class="protected" style="display:none;">
+      <h1 id="quizTitle" style="margin:0;"></h1>
+      <p class="lede" id="quizProgress" style="margin-top:6px;"></p>
+
+      <div class="panel" id="questionsArea"></div>
+
+      <button type="button" class="accent" id="submitBtn">Submit test</button>
+    </div>
+
+    <!-- Step 3: score -->
+    <div id="scoreScreen" style="display:none;">
+      <div class="panel score-block">
+        <h2 id="scoreHeading">Test submitted</h2>
+        <div class="big-score" id="scoreDisplay">-- <span>/ --</span></div>
+        <p class="lede" id="scoreNote" style="margin: 14px auto 0;">Your teacher can see this result on their dashboard.</p>
+        <a class="button" href="/index.html" style="margin-top:10px;">Done</a>
+      </div>
+    </div>
+
+  </div>
+
+  <div class="warn-overlay" id="warnOverlay">
+    <div class="warn-card">
+      <h2 id="warnTitle">Warning</h2>
+      <p id="warnText"></p>
+      <button type="button" class="accent" id="warnContinueBtn">Return to test</button>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+
+  <script src="/js/student.js"></script>
+</body>
+</html>
